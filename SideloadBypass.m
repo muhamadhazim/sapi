@@ -1,34 +1,29 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// Fungsi dasar penukar memori
-static void swizzleMethod(Class cls, SEL origSel, SEL newSel) {
-    Method origMethod = class_getInstanceMethod(cls, origSel);
-    Method newMethod = class_getInstanceMethod(cls, newSel);
-    BOOL didAddMethod = class_addMethod(cls, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod));
-    if (didAddMethod) {
-        class_replaceMethod(cls, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
-    } else {
-        method_exchangeImplementations(origMethod, newMethod);
-    }
-}
+// 1. Deklarasi penunjuk fungsi untuk menyimpan alamat memori asli
+static void (*orig_addObject)(id, SEL, id);
 
-// Fokus utama: Mencegah force close saat ShopeePay menerima variabel nil
-@implementation NSMutableSet (CrashFix)
-- (void)safe_addObject:(id)object {
+// 2. Fungsi C murni sebagai pengganti logika Apple
+static void my_addObject(id self, SEL _cmd, id object) {
     if (object == nil) {
-        // Abaikan instruksi jika objek kosong, biarkan aplikasi tetap berjalan
+        // Hentikan eksekusi jika objek kosong, selamatkan aplikasi dari crash
         return; 
     }
-    // Lanjutkan eksekusi normal jika objek valid
-    [self safe_addObject:object];
+    // Teruskan eksekusi ke alamat fungsi asli jika objek valid
+    orig_addObject(self, _cmd, object);
 }
-@end
 
-// Konstruktor berjalan saat aplikasi dimuat
+// 3. Konstruktor inisialisasi memori
 __attribute__((constructor))
 static void bypass_init() {
-    // KITA HANYA MENGINJEKSI SATU FUNGSI INI
-    // Tidak ada intervensi file system atau dyld yang bisa membentrok LiveContainer
-    swizzleMethod(NSClassFromString(@"__NSSetM"), @selector(addObject:), @selector(safe_addObject:));
+    // Cari alamat metode addObject: pada kelas internal __NSSetM
+    Method m = class_getInstanceMethod(NSClassFromString(@"__NSSetM"), @selector(addObject:));
+    
+    if (m != NULL) {
+        // Ekstrak dan simpan alamat aslinya ke dalam variabel
+        orig_addObject = (void *)method_getImplementation(m);
+        // Timpa metode di RAM dengan alamat fungsi buatan kita
+        method_setImplementation(m, (IMP)my_addObject);
+    }
 }
