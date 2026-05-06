@@ -1,0 +1,37 @@
+name: Build Sideload Bypass
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Download Fishhook
+        run: |
+          curl -O https://raw.githubusercontent.com/facebook/fishhook/main/fishhook.c
+          curl -O https://raw.githubusercontent.com/facebook/fishhook/main/fishhook.h
+
+      - name: Compile Dylib
+        run: |
+          clang -arch arm64 \
+            -shared \
+            -fmodules \
+            -fobjc-arc \
+            -isysroot $(xcrun --sdk iphoneos --show-sdk-path) \
+            -miphoneos-version-min=15.0 \
+            -framework Foundation -framework UIKit \
+            -o SideloadBypass.dylib \
+            SideloadBypass.m fishhook.c
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SideloadBypass-dylib
+          path: SideloadBypass.dylib
