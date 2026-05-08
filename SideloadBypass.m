@@ -30,7 +30,8 @@ static void swizzleMethod(Class cls, SEL origSel, SEL newSel) {
 // 2. Menambal akses preferensi penyimpanan App Group
 @implementation NSUserDefaults (AppGroupFix)
 - (instancetype)lc_initWithSuiteName:(NSString *)suitename {
-    instancetype defaults = [self lc_initWithSuiteName:suitename];
+    // PERBAIKAN: Gunakan pointer 'id', bukan 'instancetype'
+    id defaults = [self lc_initWithSuiteName:suitename];
     
     // Jika gagal membuat suite penyimpanan khusus, paksa kembali ke penyimpanan standar
     if (defaults == nil) {
