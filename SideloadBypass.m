@@ -13,24 +13,35 @@ static void swizzleMethod(Class cls, SEL origSel, SEL newSel) {
     }
 }
 
-@implementation NSBundle (ShopeeFix)
-
-// 1. Paksa Bundle ID agar selalu terlihat asli di mata sistem keamanan aplikasi
-- (NSString *)lc_bundleIdentifier {
-    return @"com.shopeepay.id"; 
+// 1. Menambal akses file App Group yang hilang
+@implementation NSFileManager (AppGroupFix)
+- (NSURL *)lc_containerURLForSecurityApplicationGroupIdentifier:(NSString *)groupIdentifier {
+    NSURL *originalURL = [self lc_containerURLForSecurityApplicationGroupIdentifier:groupIdentifier];
+    
+    // Jika sistem menolak akses dan memberikan nil, kita manipulasi dengan URL valid
+    if (originalURL == nil) {
+        NSString *dummyPath = [NSString stringWithFormat:@"/private/var/mobile/Containers/Data/Application/dummy/Groups/%@", groupIdentifier];
+        return [NSURL fileURLWithPath:dummyPath];
+    }
+    return originalURL;
 }
+@end
 
-// 2. Berikan URL receipt palsu agar aplikasi tidak mendapatkan nilai 'nil' yang memicu crash NSSetM
-- (NSURL *)lc_appStoreReceiptURL {
-    return [NSURL fileURLWithPath:@"/private/var/mobile/Containers/Data/Application/dummy/StoreKit/receipt"];
+// 2. Menambal akses preferensi penyimpanan App Group
+@implementation NSUserDefaults (AppGroupFix)
+- (instancetype)lc_initWithSuiteName:(NSString *)suitename {
+    instancetype defaults = [self lc_initWithSuiteName:suitename];
+    
+    // Jika gagal membuat suite penyimpanan khusus, paksa kembali ke penyimpanan standar
+    if (defaults == nil) {
+        return [self lc_initWithSuiteName:nil];
+    }
+    return defaults;
 }
-
 @end
 
 __attribute__((constructor))
-static void init_bypass() {
-    // Kita hanya melakukan swizzling pada NSBundle. 
-    // Ini aman dan tidak akan menyebabkan layar hitam di LiveContainer.
-    swizzleMethod([NSBundle class], @selector(bundleIdentifier), @selector(lc_bundleIdentifier));
-    swizzleMethod([NSBundle class], @selector(appStoreReceiptURL), @selector(lc_appStoreReceiptURL));
+static void init_appgroup_bypass() {
+    swizzleMethod([NSFileManager class], @selector(containerURLForSecurityApplicationGroupIdentifier:), @selector(lc_containerURLForSecurityApplicationGroupIdentifier:));
+    swizzleMethod([NSUserDefaults class], @selector(initWithSuiteName:), @selector(lc_initWithSuiteName:));
 }
