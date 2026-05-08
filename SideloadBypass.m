@@ -1,29 +1,36 @@
 #import <Foundation/Foundation.h>
 #import <objc/runtime.h>
 
-// 1. Deklarasi penunjuk fungsi untuk menyimpan alamat memori asli
-static void (*orig_addObject)(id, SEL, id);
+static void swizzleMethod(Class cls, SEL origSel, SEL newSel) {
+    Method origMethod = class_getInstanceMethod(cls, origSel);
+    Method newMethod = class_getInstanceMethod(cls, newSel);
+    if (!origMethod || !newMethod) return;
 
-// 2. Fungsi C murni sebagai pengganti logika Apple
-static void my_addObject(id self, SEL _cmd, id object) {
-    if (object == nil) {
-        // Hentikan eksekusi jika objek kosong, selamatkan aplikasi dari crash
-        return; 
+    if (class_addMethod(cls, origSel, method_getImplementation(newMethod), method_getTypeEncoding(newMethod))) {
+        class_replaceMethod(cls, newSel, method_getImplementation(origMethod), method_getTypeEncoding(origMethod));
+    } else {
+        method_exchangeImplementations(origMethod, newMethod);
     }
-    // Teruskan eksekusi ke alamat fungsi asli jika objek valid
-    orig_addObject(self, _cmd, object);
 }
 
-// 3. Konstruktor inisialisasi memori
+@implementation NSBundle (ShopeeFix)
+
+// 1. Paksa Bundle ID agar selalu terlihat asli di mata sistem keamanan aplikasi
+- (NSString *)lc_bundleIdentifier {
+    return @"com.shopeepay.id"; 
+}
+
+// 2. Berikan URL receipt palsu agar aplikasi tidak mendapatkan nilai 'nil' yang memicu crash NSSetM
+- (NSURL *)lc_appStoreReceiptURL {
+    return [NSURL fileURLWithPath:@"/private/var/mobile/Containers/Data/Application/dummy/StoreKit/receipt"];
+}
+
+@end
+
 __attribute__((constructor))
-static void bypass_init() {
-    // Cari alamat metode addObject: pada kelas internal __NSSetM
-    Method m = class_getInstanceMethod(NSClassFromString(@"__NSSetM"), @selector(addObject:));
-    
-    if (m != NULL) {
-        // Ekstrak dan simpan alamat aslinya ke dalam variabel
-        orig_addObject = (void *)method_getImplementation(m);
-        // Timpa metode di RAM dengan alamat fungsi buatan kita
-        method_setImplementation(m, (IMP)my_addObject);
-    }
+static void init_bypass() {
+    // Kita hanya melakukan swizzling pada NSBundle. 
+    // Ini aman dan tidak akan menyebabkan layar hitam di LiveContainer.
+    swizzleMethod([NSBundle class], @selector(bundleIdentifier), @selector(lc_bundleIdentifier));
+    swizzleMethod([NSBundle class], @selector(appStoreReceiptURL), @selector(lc_appStoreReceiptURL));
 }
